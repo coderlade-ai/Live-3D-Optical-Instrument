@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-obsidian: #09090b;
+  --color-studio: #111114;
+  --color-surface: #16161a;
+  --color-bone: #f0e9da;
+  --color-stone: #a6a096;
+  --color-crimson: #dc2626;
+  --color-crimson-bright: #ef4444;
+}
+
+@layer base {
+  html {
+    background-color: #09090b;
+    color: #f0e9da;
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: #09090b;
+    overflow-x: clip;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono-tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Studio ambient corner glow inspired by darkroom softbox bounce */
+.studio-vignette {
+  background:
+    radial-gradient(60% 45% at 88% 8%, rgba(185, 28, 28, 0.14) 0%, rgba(9, 9, 11, 0) 70%),
+    radial-gradient(50% 40% at 10% 92%, rgba(153, 27, 27, 0.08) 0%, rgba(9, 9, 11, 0) 68%);
+}
+
+/* Custom thin range input styling for exploded view & aperture sliders */
+input[type="range"].studio-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"].studio-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 9999px;
+  background: rgba(240, 233, 218, 0.16);
+}
+
+input[type="range"].studio-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #dc2626;
+  border: 2px solid #f0e9da;
+  margin-top: -5.5px;
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+input[type="range"].studio-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+input[type="range"].studio-slider::-moz-range-track {
+  height: 3px;
+  border-radius: 9999px;
+  background: rgba(240, 233, 218, 0.16);
+}
+
+input[type="range"].studio-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #dc2626;
+  border: 2px solid #f0e9da;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

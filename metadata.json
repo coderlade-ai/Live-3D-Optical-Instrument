@@ -1,0 +1,6 @@
+{
+  "name": "Kessler 50mm — Live 3D Optical Instrument",
+  "description": "A real-time procedural 3D website showcasing the Kessler 50mm f/1.4 precision prime lens, built entirely from code with SDF geometry, anisotropic PBR metals, PMREM studio lighting, scroll-directed camera cues, and synthesized Web Audio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
