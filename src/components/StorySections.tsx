@@ -1,6 +1,7 @@
 import { ArrowDown } from 'lucide-react';
 import { LENS_PARTS, computeScrollReveal } from '../engine/cues';
 import { FINISH_PRESETS, FinishId } from '../engine/materials';
+import { ViewMode } from '../engine/heatmap';
 import { HoldVerbButton } from './HoldVerbButton';
 
 interface StorySectionsProps {
@@ -8,9 +9,9 @@ interface StorySectionsProps {
   fStop: string;
   timeScale: number;
   finish: FinishId;
-  blueprintMode: boolean;
+  viewMode: ViewMode;
   onFinishChange: (finish: FinishId) => void;
-  onToggleBlueprint: () => void;
+  onViewModeChange: (mode: ViewMode) => void;
   onFirstGesture: () => void;
   onEngageChange: (progress: number) => void;
   onNavigateSection: (sectionId: string) => void;
@@ -48,9 +49,9 @@ export function StorySections({
   fStop,
   timeScale,
   finish,
-  blueprintMode,
+  viewMode,
   onFinishChange,
-  onToggleBlueprint,
+  onViewModeChange,
   onFirstGesture,
   onEngageChange,
   onNavigateSection,
@@ -72,7 +73,9 @@ export function StorySections({
       ===================================================================== */}
       <section
         id="overview"
-        className="min-h-[100svh] flex flex-col justify-between lg:justify-center px-5 sm:px-8 lg:px-12 pt-20 pb-16 lg:py-24 max-w-7xl mx-auto"
+        className={`min-h-[100svh] flex flex-col justify-between lg:justify-center px-5 sm:px-8 lg:px-12 pb-16 lg:py-24 max-w-7xl mx-auto transition-[padding] duration-150 ${
+          viewMode === 'heatmap' ? 'pt-28 sm:pt-20' : 'pt-20'
+        }`}
       >
         <div
           className="max-w-lg pointer-events-auto transition-opacity duration-200"
@@ -200,18 +203,30 @@ export function StorySections({
             Top elements lift first and seat back last. Switch to Blueprint Mode at any moment to
             inspect the raw procedural edges beneath the metal.
           </p>
-          <div className="mt-4 flex justify-center">
+          <div className="mt-4 flex flex-wrap justify-center gap-2.5">
             <button
               type="button"
-              onClick={onToggleBlueprint}
-              aria-pressed={blueprintMode}
+              onClick={() => onViewModeChange(viewMode === 'blueprint' ? 'studio' : 'blueprint')}
+              aria-pressed={viewMode === 'blueprint'}
               className={`px-4 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold border transition-colors cursor-pointer whitespace-nowrap ${
-                blueprintMode
+                viewMode === 'blueprint'
                   ? 'bg-[#dc2626] border-[#dc2626] text-white'
                   : 'bg-[#121216]/95 border-white/15 text-[#f0e9da] hover:border-[#dc2626]'
               }`}
             >
-              {blueprintMode ? 'Return to Studio Metal' : 'Inspect Blueprint Edges'}
+              {viewMode === 'blueprint' ? 'Return to Studio Metal' : 'Inspect Blueprint Edges'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onViewModeChange(viewMode === 'heatmap' ? 'studio' : 'heatmap')}
+              aria-pressed={viewMode === 'heatmap'}
+              className={`px-4 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold border transition-colors cursor-pointer whitespace-nowrap ${
+                viewMode === 'heatmap'
+                  ? 'bg-[#dc2626] border-[#dc2626] text-white'
+                  : 'bg-[#121216]/95 border-white/15 text-[#f0e9da] hover:border-[#dc2626]'
+              }`}
+            >
+              {viewMode === 'heatmap' ? 'Exit Reflection Heat Map' : 'Reflection Heat Map'}
             </button>
           </div>
         </div>
@@ -299,12 +314,27 @@ export function StorySections({
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono-tabular text-[11px] text-[#a6a096]">
-            <span>Off-axis Key Softbox</span>
-            <span aria-hidden="true">·</span>
-            <span>Twin Edge Strips</span>
-            <span aria-hidden="true">·</span>
-            <span>ACES Filmic</span>
+          <div className="mt-4 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => onViewModeChange(viewMode === 'heatmap' ? 'studio' : 'heatmap')}
+              aria-pressed={viewMode === 'heatmap'}
+              className={`px-3.5 py-2 min-h-[40px] rounded-lg text-xs font-semibold border transition-colors cursor-pointer whitespace-nowrap ${
+                viewMode === 'heatmap'
+                  ? 'bg-[#dc2626] border-[#dc2626] text-white'
+                  : 'bg-[#151519] border-white/15 text-[#f0e9da] hover:border-[#dc2626]'
+              }`}
+            >
+              {viewMode === 'heatmap' ? 'Exit Reflection Heat Map' : 'Visualize Reflection Heat Map'}
+            </button>
+
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono-tabular text-[11px] text-[#a6a096]">
+              <span>Key Softbox</span>
+              <span aria-hidden="true">·</span>
+              <span>Twin Strips</span>
+              <span aria-hidden="true">·</span>
+              <span>ACES</span>
+            </div>
           </div>
         </div>
       </section>

@@ -1,18 +1,25 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, Volume2, VolumeX, Layers } from 'lucide-react';
 import { FINISH_PRESETS, FinishId } from '../engine/materials';
+import { ViewMode } from '../engine/heatmap';
 
 interface ControlDockProps {
   finish: FinishId;
   onFinishChange: (finish: FinishId) => void;
-  blueprintMode: boolean;
-  onToggleBlueprint: () => void;
+  viewMode: ViewMode;
+  onViewModeChange: (mode: ViewMode) => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   explodeOverride: number | null;
   liveExplode: number;
   onExplodeOverrideChange: (val: number | null) => void;
 }
+
+const VIEW_MODES: Array<{ id: ViewMode; label: string }> = [
+  { id: 'studio', label: 'Studio' },
+  { id: 'blueprint', label: 'Edges' },
+  { id: 'heatmap', label: 'Heat Map' },
+];
 
 const FINISH_LIST = Object.values(FINISH_PRESETS);
 
@@ -26,8 +33,8 @@ const FINISH_LIST = Object.values(FINISH_PRESETS);
 export function ControlDock({
   finish,
   onFinishChange,
-  blueprintMode,
-  onToggleBlueprint,
+  viewMode,
+  onViewModeChange,
   soundEnabled,
   onToggleSound,
   explodeOverride,
@@ -165,20 +172,34 @@ export function ControlDock({
                 })}
               </div>
 
-              {/* Blueprint & Sound Toggles */}
+              {/* View Mode Segmented Control (Studio | Edges | Heat Map) & Audio */}
               <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={onToggleBlueprint}
-                  aria-pressed={blueprintMode}
-                  className={`px-3 py-1.5 min-h-[36px] rounded-lg text-xs font-medium border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                    blueprintMode
-                      ? 'bg-[#dc2626] border-[#dc2626] text-white'
-                      : 'bg-[#09090b] border-white/12 text-[#d6cfc2] hover:text-[#f0e9da]'
-                  }`}
+                <div
+                  role="group"
+                  aria-label="Diagnostic view mode"
+                  className="inline-flex items-center gap-0.5 p-1 rounded-lg bg-[#09090b] border border-white/12"
                 >
-                  {blueprintMode ? 'Edges On' : 'Edges'}
-                </button>
+                  {VIEW_MODES.map((m) => {
+                    const active = viewMode === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => onViewModeChange(m.id)}
+                        aria-pressed={active}
+                        className={`px-2.5 py-1.5 min-h-[32px] rounded-md text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                          active
+                            ? m.id === 'heatmap' || m.id === 'blueprint'
+                              ? 'bg-[#dc2626] text-white'
+                              : 'bg-[#202026] text-[#f0e9da]'
+                            : 'text-[#a6a096] hover:text-[#f0e9da]'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    );
+                  })}
+                </div>
 
                 <button
                   type="button"

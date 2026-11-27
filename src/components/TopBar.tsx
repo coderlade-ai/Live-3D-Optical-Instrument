@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import { BeatId } from '../engine/cues';
+import { ViewMode } from '../engine/heatmap';
 
 interface TopBarProps {
   activeBeat: BeatId;
-  blueprintMode: boolean;
-  onToggleBlueprint: () => void;
+  viewMode: ViewMode;
+  onToggleHeatMap: () => void;
   onNavigateSection: (sectionId: string) => void;
 }
 
@@ -19,11 +20,12 @@ const NAV_ITEMS: Array<{ id: string; beat: BeatId; label: string }> = [
 
 export function TopBar({
   activeBeat,
-  blueprintMode,
-  onToggleBlueprint,
+  viewMode,
+  onToggleHeatMap,
   onNavigateSection,
 }: TopBarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isHeatMap = viewMode === 'heatmap';
 
   const handleNav = (id: string) => {
     setMobileOpen(false);
@@ -76,15 +78,15 @@ export function TopBar({
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={onToggleBlueprint}
-            aria-pressed={blueprintMode}
+            onClick={onToggleHeatMap}
+            aria-pressed={isHeatMap}
             className={`px-3.5 py-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 min-h-[36px] cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#dc2626] ${
-              blueprintMode
+              isHeatMap
                 ? 'bg-[#dc2626] text-white hover:bg-[#b91c1c]'
                 : 'bg-[#f0e9da] text-[#09090b] hover:bg-white'
             }`}
           >
-            {blueprintMode ? 'Exit Blueprint' : 'Blueprint Mode'}
+            {isHeatMap ? 'Exit Heat Map' : 'Heat Map'}
           </button>
 
           <button

@@ -13,6 +13,11 @@ import {
   sampleCameraCue,
 } from './cues';
 import { FinishId, MaterialLibrary, createMaterialLibrary } from './materials';
+import {
+  ReflectionReadout,
+  ViewMode,
+  computeLiveReflectionReadout,
+} from './heatmap';
 import { LAYER_GLASS, LAYER_METAL, LensAssembly, buildKesslerLens } from './lensBuilder';
 import { StudioRig, setupPhotoStudio } from './studio';
 import { ProceduralLensAudio } from './audio';
@@ -37,6 +42,7 @@ export interface EngineTelemetry {
   timeScale: number;
   fStop: string;
   scrollProgress: number;
+  reflectionReadout: ReflectionReadout;
 }
 
 export interface EngineCallbacks {
@@ -145,7 +151,7 @@ export class LiveLensEngine {
   private activeBeat: BeatId = 'hero';
 
   private explodeOverride: number | null = null; // null = follow scroll cue
-  private blueprintMode = false;
+  private viewMode: ViewMode = 'studio';
   private targetEngage = 0;
   private smoothEngage = 0;
 
@@ -298,9 +304,9 @@ export class LiveLensEngine {
     this.materials?.applyFinish(finish);
   }
 
-  public setBlueprintMode(enabled: boolean): void {
-    this.blueprintMode = enabled;
-    this.lens?.setBlueprintMode(enabled);
+  public setViewMode(mode: ViewMode): void {
+    this.viewMode = mode;
+    this.lens?.setViewMode(mode);
   }
 
   public setExplodeOverride(value: number | null): void {
@@ -520,11 +526,12 @@ export class LiveLensEngine {
     this.smoothDragPolar += (this.dragPolarOffset - this.smoothDragPolar) * alpha;
 
     // Step 05: Cursor / mobile tilt rotates the studio reflections smoothly
-    this.scene.environmentRotation.set(
-      this.smoothEnvY * 0.45,
-      -this.smoothEnvX * 0.8,
-      0,
-    );
+    const envRotX = this.smoothEnvY * 0.45;
+    const envRotY = -this.smoothEnvX * 0.8;
+    this.scene.environmentRotation.set(envRotX, envRotY, 0);
+    if (this.viewMode === 'heatmap') {
+      this.lens.updateHeatMapEnvRotation(envRotX, envRotY);
+    }
 
     // Step 08: Single simulation clock drives every moving part + fires beat ticks
     const clockSpeed = this.reducedMotion ? 0 : this.smoothShot.timeScale;
@@ -656,6 +663,11 @@ export class LiveLensEngine {
         timeScale: this.smoothShot.timeScale,
         fStop: F_STOPS[stopIdx],
         scrollProgress: this.scrollProgress,
+        reflectionReadout: computeLiveReflectionReadout(
+          this.smoothEnvX,
+          this.smoothEnvY,
+          this.smoothEngage,
+        ),
       });
     }
   }

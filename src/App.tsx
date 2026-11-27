@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BeatId } from './engine/cues';
 import { FinishId } from './engine/materials';
+import { ViewMode, computeLiveReflectionReadout } from './engine/heatmap';
 import { EngineTelemetry, LiveLensEngine } from './engine/LiveLensEngine';
 import { TopBar } from './components/TopBar';
 import { StorySections } from './components/StorySections';
 import { ExplodedCallouts, ExplodedCalloutsHandle } from './components/ExplodedCallouts';
 import { ControlDock } from './components/ControlDock';
+import { HeatMapLegend } from './components/HeatMapLegend';
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -16,7 +18,7 @@ export default function App() {
   const [webglError, setWebglError] = useState<string | null>(null);
 
   const [finish, setFinish] = useState<FinishId>('titanium');
-  const [blueprintMode, setBlueprintMode] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('studio');
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [explodeOverride, setExplodeOverride] = useState<number | null>(null);
 
@@ -26,6 +28,7 @@ export default function App() {
     timeScale: 1,
     fStop: 'f/1.4',
     scrollProgress: 0,
+    reflectionReadout: computeLiveReflectionReadout(0, 0, 0),
   });
 
   // Mount LiveLensEngine strictly once (never tear down WebGL canvas on React UI state updates)
@@ -44,7 +47,10 @@ export default function App() {
             prev.fStop === next.fStop &&
             Math.abs(prev.explode - next.explode) < 0.015 &&
             Math.abs(prev.timeScale - next.timeScale) < 0.02 &&
-            Math.abs(prev.scrollProgress - next.scrollProgress) < 0.008
+            Math.abs(prev.scrollProgress - next.scrollProgress) < 0.008 &&
+            prev.reflectionReadout.peakSpecularPct === next.reflectionReadout.peakSpecularPct &&
+            prev.reflectionReadout.glassGrazingPct === next.reflectionReadout.glassGrazingPct &&
+            prev.reflectionReadout.barrelMeanPct === next.reflectionReadout.barrelMeanPct
           ) {
             return prev;
           }
@@ -69,11 +75,20 @@ export default function App() {
     engineRef.current?.audio.playDetent(1.15, 0.7);
   }, []);
 
-  const handleToggleBlueprint = useCallback(() => {
-    setBlueprintMode((prev) => {
-      const next = !prev;
-      engineRef.current?.setBlueprintMode(next);
-      engineRef.current?.audio.playDetent(next ? 1.35 : 0.85, 0.75);
+  const handleViewModeChange = useCallback((nextMode: ViewMode) => {
+    setViewMode(nextMode);
+    engineRef.current?.setViewMode(nextMode);
+    engineRef.current?.audio.playDetent(
+      nextMode === 'heatmap' ? 1.45 : nextMode === 'blueprint' ? 1.25 : 0.88,
+      0.75,
+    );
+  }, []);
+
+  const handleToggleHeatMap = useCallback(() => {
+    setViewMode((prev) => {
+      const next: ViewMode = prev === 'heatmap' ? 'studio' : 'heatmap';
+      engineRef.current?.setViewMode(next);
+      engineRef.current?.audio.playDetent(next === 'heatmap' ? 1.45 : 0.88, 0.75);
       return next;
     });
   }, []);
@@ -117,7 +132,8 @@ export default function App() {
       className="relative overflow-x-clip min-h-screen bg-[#09090b] text-[#f0e9da]"
       data-ready={ready ? 'true' : 'false'}
       data-beat={telemetry.activeBeat as BeatId}
-      data-blueprint={blueprintMode ? 'true' : 'false'}
+      data-view-mode={viewMode}
+      data-blueprint={viewMode === 'blueprint' ? 'true' : 'false'}
       data-finish={finish}
       data-sound={soundEnabled ? 'on' : 'off'}
     >
@@ -152,9 +168,16 @@ export default function App() {
       {/* Compact 3-zone Top Navigation Bar */}
       <TopBar
         activeBeat={telemetry.activeBeat}
-        blueprintMode={blueprintMode}
-        onToggleBlueprint={handleToggleBlueprint}
+        viewMode={viewMode}
+        onToggleHeatMap={handleToggleHeatMap}
         onNavigateSection={handleNavigateSection}
+      />
+
+      {/* Optical Reflection Intensity Diagnostic Scale Overlay */}
+      <HeatMapLegend
+        visible={viewMode === 'heatmap'}
+        readout={telemetry.reflectionReadout}
+        onExit={() => handleViewModeChange('studio')}
       />
 
       {/* Step 07: Real-time projected two-column callout labels & leader lines */}
@@ -166,9 +189,9 @@ export default function App() {
         fStop={telemetry.fStop}
         timeScale={telemetry.timeScale}
         finish={finish}
-        blueprintMode={blueprintMode}
+        viewMode={viewMode}
         onFinishChange={handleFinishChange}
-        onToggleBlueprint={handleToggleBlueprint}
+        onViewModeChange={handleViewModeChange}
         onFirstGesture={handleFirstGesture}
         onEngageChange={handleEngageChange}
         onNavigateSection={handleNavigateSection}
@@ -178,8 +201,8 @@ export default function App() {
       <ControlDock
         finish={finish}
         onFinishChange={handleFinishChange}
-        blueprintMode={blueprintMode}
-        onToggleBlueprint={handleToggleBlueprint}
+        viewMode={viewMode}
+        onViewModeChange={handleViewModeChange}
         soundEnabled={soundEnabled}
         onToggleSound={handleToggleSound}
         explodeOverride={explodeOverride}

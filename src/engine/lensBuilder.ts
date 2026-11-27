@@ -6,6 +6,12 @@ import {
 } from './cues';
 import { MaterialLibrary } from './materials';
 import {
+  HeatMapMaterialHandle,
+  OpticalSurfaceProfile,
+  ViewMode,
+  createHeatMapMaterial,
+} from './heatmap';
+import {
   Point2D,
   createBayonetPlateSDF,
   createIrisBladeSDF,
@@ -16,6 +22,13 @@ import {
 
 export const LAYER_METAL = 0;
 export const LAYER_GLASS = 1;
+
+interface SwappableMeshRecord {
+  mesh: THREE.Mesh;
+  originalMaterial: THREE.Material | THREE.Material[];
+  heatMaterial: THREE.Material | THREE.Material[];
+  hideInHeatmap: boolean;
+}
 
 export interface AnimatedPartNode {
   spec: LensPartSpec;
@@ -33,8 +46,21 @@ export interface LensAssembly {
     simTime: number;
     engageAmount: number;
   }) => void;
-  setBlueprintMode: (enabled: boolean) => void;
+  setViewMode: (mode: ViewMode) => void;
+  updateHeatMapEnvRotation: (rotX: number, rotY: number) => void;
   dispose: () => void;
+}
+
+function profileFromPbrMaterial(mat: THREE.Material, isGlassLayer: boolean): OpticalSurfaceProfile {
+  const phys = mat as THREE.MeshPhysicalMaterial;
+  const std = mat as THREE.MeshStandardMaterial;
+  return {
+    metalness: typeof std.metalness === 'number' ? std.metalness : 0.5,
+    roughness: typeof std.roughness === 'number' ? std.roughness : 0.4,
+    ior: typeof phys.ior === 'number' ? phys.ior : 1.5,
+    envIntensity: typeof std.envMapIntensity === 'number' ? std.envMapIntensity : 1.2,
+    isGlass: isGlassLayer || Boolean(mat.transparent),
+  };
 }
 
 /**
@@ -115,7 +141,35 @@ export function buildKesslerLens(
   const root = new THREE.Group();
   const geometries: THREE.BufferGeometry[] = [];
   const parts: AnimatedPartNode[] = [];
+  const swappableMeshes: SwappableMeshRecord[] = [];
+  const heatHandles = new Map<string, HeatMapMaterialHandle>();
   const latheSegs = 64;
+
+  const getHeatMaterialFor = (mat: THREE.Material, isGlassLayer: boolean): THREE.ShaderMaterial => {
+    const key = `${mat.uuid}:${isGlassLayer ? 'g' : 'm'}`;
+    const existing = heatHandles.get(key);
+    if (existing) return existing.material;
+    const handle = createHeatMapMaterial(profileFromPbrMaterial(mat, isGlassLayer));
+    heatHandles.set(key, handle);
+    return handle.material;
+  };
+
+  const registerSwappable = (
+    mesh: THREE.Mesh,
+    isGlassLayer: boolean,
+    hideInHeatmap = false,
+  ) => {
+    const orig = mesh.material;
+    const heatMat = Array.isArray(orig)
+      ? orig.map((m) => getHeatMaterialFor(m, isGlassLayer))
+      : getHeatMaterialFor(orig, isGlassLayer);
+    swappableMeshes.push({
+      mesh,
+      originalMaterial: orig,
+      heatMaterial: heatMat,
+      hideInHeatmap,
+    });
+  };
 
   const trackGeo = <T extends THREE.BufferGeometry>(g: T): T => {
     geometries.push(g);
@@ -133,6 +187,7 @@ export function buildKesslerLens(
           edgeMaterial?: THREE.LineBasicMaterial;
           edgeThreshold?: number;
           skipBlueprint?: boolean;
+          hideInHeatmap?: boolean;
         },
       ) => void,
     ) => void,
@@ -151,6 +206,7 @@ export function buildKesslerLens(
         edgeMaterial?: THREE.LineBasicMaterial;
         edgeThreshold?: number;
         skipBlueprint?: boolean;
+        hideInHeatmap?: boolean;
       },
     ) => {
       const layer = opts?.layer ?? LAYER_METAL;
@@ -158,6 +214,9 @@ export function buildKesslerLens(
       if (obj instanceof THREE.Mesh && layer === LAYER_METAL && !isSoftwareGl) {
         obj.castShadow = true;
         obj.receiveShadow = true;
+      }
+      if (obj instanceof THREE.Mesh) {
+        registerSwappable(obj, layer === LAYER_GLASS, Boolean(opts?.hideInHeatmap));
       }
       group.add(obj);
       solidMeshes.push(obj);
@@ -276,7 +335,7 @@ export function buildKesslerLens(
     const sheenMesh = new THREE.Mesh(glassGeo, materials.frontGlassSheen);
     sheenMesh.scale.setScalar(1.003);
     sheenMesh.renderOrder = 11;
-    addSolid(sheenMesh, { layer: LAYER_GLASS, skipBlueprint: true });
+    addSolid(sheenMesh, { layer: LAYER_GLASS, skipBlueprint: true, hideInHeatmap: true });
 
     // Precision machined retaining collar around glass edge
     const collarGeo = trackGeo(
@@ -461,6 +520,7 @@ export function buildKesslerLens(
 
       const bladeMesh = new THREE.Mesh(bladeGeo, bladeMaterials);
       bladeMesh.layers.set(LAYER_METAL);
+      registerSwappable(bladeMesh, false);
       pivot.add(bladeMesh);
 
       const bladeWire = new THREE.LineSegments(bladeEdgeGeo, materials.blueprintAccent);
@@ -677,20 +737,40 @@ export function buildKesslerLens(
     }
   };
 
-  const setBlueprintMode = (enabled: boolean) => {
+  const setViewMode = (mode: ViewMode) => {
+    const isBlueprint = mode === 'blueprint';
+    const isHeatmap = mode === 'heatmap';
+
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i];
       for (const s of p.solidMeshes) {
-        s.visible = !enabled;
+        s.visible = !isBlueprint;
       }
       for (const l of p.blueprintLines) {
-        l.visible = enabled;
+        l.visible = isBlueprint;
+      }
+    }
+
+    for (let i = 0; i < swappableMeshes.length; i++) {
+      const rec = swappableMeshes[i];
+      if (isHeatmap) {
+        rec.mesh.material = rec.heatMaterial;
+        rec.mesh.visible = !rec.hideInHeatmap;
+      } else {
+        rec.mesh.material = rec.originalMaterial;
+        rec.mesh.visible = !isBlueprint;
       }
     }
   };
 
+  const updateHeatMapEnvRotation = (rotX: number, rotY: number) => {
+    heatHandles.forEach((handle) => handle.setEnvRotation(rotX, rotY));
+  };
+
   const dispose = () => {
     geometries.forEach((g) => g.dispose());
+    heatHandles.forEach((handle) => handle.material.dispose());
+    heatHandles.clear();
   };
 
   // Set initial neutral pose
@@ -700,7 +780,8 @@ export function buildKesslerLens(
     root,
     parts,
     pose,
-    setBlueprintMode,
+    setViewMode,
+    updateHeatMapEnvRotation,
     dispose,
   };
 }
