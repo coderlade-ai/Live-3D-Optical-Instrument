@@ -2,12 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BeatId } from './engine/cues';
 import { FinishId } from './engine/materials';
 import { ViewMode, computeLiveReflectionReadout } from './engine/heatmap';
+import { BokehShape } from './engine/bokeh';
+import { HERO_REFERENCE_FRAME_MM, computeOpticalData } from './engine/opticalTelemetry';
 import { EngineTelemetry, LiveLensEngine } from './engine/LiveLensEngine';
 import { TopBar } from './components/TopBar';
 import { StorySections } from './components/StorySections';
 import { ExplodedCallouts, ExplodedCalloutsHandle } from './components/ExplodedCallouts';
 import { ControlDock } from './components/ControlDock';
 import { HeatMapLegend } from './components/HeatMapLegend';
+import { OpticalDataOverlay } from './components/OpticalDataOverlay';
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -19,6 +22,7 @@ export default function App() {
 
   const [finish, setFinish] = useState<FinishId>('titanium');
   const [viewMode, setViewMode] = useState<ViewMode>('studio');
+  const [bokehShape, setBokehShape] = useState<BokehShape>('hexagonal');
   const [showFocalPlane, setShowFocalPlane] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [explodeOverride, setExplodeOverride] = useState<number | null>(null);
@@ -31,6 +35,12 @@ export default function App() {
     focalDistanceLabel: '0.65 m',
     scrollProgress: 0,
     reflectionReadout: computeLiveReflectionReadout(0, 0, 0),
+    opticalData: computeOpticalData({
+      frameMm: HERO_REFERENCE_FRAME_MM,
+      explode: 0,
+      focusNorm: 0.25,
+      viewMode: 'studio',
+    }),
   });
 
   // Mount LiveLensEngine strictly once (never tear down WebGL canvas on React UI state updates)
@@ -53,7 +63,12 @@ export default function App() {
             Math.abs(prev.scrollProgress - next.scrollProgress) < 0.008 &&
             prev.reflectionReadout.peakSpecularPct === next.reflectionReadout.peakSpecularPct &&
             prev.reflectionReadout.glassGrazingPct === next.reflectionReadout.glassGrazingPct &&
-            prev.reflectionReadout.barrelMeanPct === next.reflectionReadout.barrelMeanPct
+            prev.reflectionReadout.barrelMeanPct === next.reflectionReadout.barrelMeanPct &&
+            prev.opticalData.effectiveFocalLengthMm === next.opticalData.effectiveFocalLengthMm &&
+            prev.opticalData.effectiveRefractiveIndex === next.opticalData.effectiveRefractiveIndex &&
+            prev.opticalData.airGapMm === next.opticalData.airGapMm &&
+            prev.opticalData.zoomFactor === next.opticalData.zoomFactor &&
+            prev.opticalData.couplingState === next.opticalData.couplingState
           ) {
             return prev;
           }
@@ -82,14 +97,25 @@ export default function App() {
     setViewMode(nextMode);
     engineRef.current?.setViewMode(nextMode);
     const pitch =
-      nextMode === 'aberration'
-        ? 1.55
-        : nextMode === 'heatmap'
-          ? 1.45
-          : nextMode === 'blueprint'
-            ? 1.25
-            : 0.88;
+      nextMode === 'bokeh'
+        ? 1.62
+        : nextMode === 'aberration'
+          ? 1.55
+          : nextMode === 'heatmap'
+            ? 1.45
+            : nextMode === 'blueprint'
+              ? 1.25
+              : 0.88;
     engineRef.current?.audio.playDetent(pitch, 0.75);
+  }, []);
+
+  const handleToggleBokehShape = useCallback(() => {
+    setBokehShape((prev) => {
+      const next: BokehShape = prev === 'hexagonal' ? 'circular' : 'hexagonal';
+      engineRef.current?.setBokehShape(next);
+      engineRef.current?.audio.playDetent(next === 'hexagonal' ? 1.38 : 1.08, 0.7);
+      return next;
+    });
   }, []);
 
   const handleToggleFocalPlane = useCallback(() => {
@@ -150,6 +176,7 @@ export default function App() {
       data-ready={ready ? 'true' : 'false'}
       data-beat={telemetry.activeBeat as BeatId}
       data-view-mode={viewMode}
+      data-bokeh-shape={bokehShape}
       data-focal-plane={showFocalPlane ? 'true' : 'false'}
       data-blueprint={viewMode === 'blueprint' ? 'true' : 'false'}
       data-finish={finish}
@@ -198,6 +225,9 @@ export default function App() {
         onExit={() => handleViewModeChange('studio')}
       />
 
+      {/* Real-Time Optical Data Overlay (elements, nD indices, Gullstrand EFL) */}
+      <OpticalDataOverlay data={telemetry.opticalData} viewMode={viewMode} />
+
       {/* Step 07: Real-time projected two-column callout labels & leader lines */}
       <ExplodedCallouts ref={calloutsRef} />
 
@@ -221,6 +251,8 @@ export default function App() {
         onFinishChange={handleFinishChange}
         viewMode={viewMode}
         onViewModeChange={handleViewModeChange}
+        bokehShape={bokehShape}
+        onToggleBokehShape={handleToggleBokehShape}
         showFocalPlane={showFocalPlane}
         focalDistanceLabel={telemetry.focalDistanceLabel}
         onToggleFocalPlane={handleToggleFocalPlane}

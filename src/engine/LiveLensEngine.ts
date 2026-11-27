@@ -23,6 +23,15 @@ import {
   createChromaticAberrationShader,
 } from './aberration';
 import {
+  BokehShape,
+  computeBokehParams,
+  createBokehSimulationShader,
+} from './bokeh';
+import {
+  OpticalDataSnapshot,
+  computeOpticalData,
+} from './opticalTelemetry';
+import {
   FocalPlaneHelper,
   computeFocalDistanceState,
   createFocalPlaneHelper,
@@ -53,6 +62,7 @@ export interface EngineTelemetry {
   focalDistanceLabel: string;
   scrollProgress: number;
   reflectionReadout: ReflectionReadout;
+  opticalData: OpticalDataSnapshot;
 }
 
 export interface EngineCallbacks {
@@ -132,10 +142,11 @@ export class LiveLensEngine {
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
   private composer: EffectComposer | null = null;
-  private softwareAberrationComposer: EffectComposer | null = null;
+  private softwarePostComposer: EffectComposer | null = null;
   private bloomPass: UnrealBloomPass | null = null;
   private grainPass: ShaderPass | null = null;
   private aberrationPass: ShaderPass | null = null;
+  private bokehPass: ShaderPass | null = null;
   private materials!: MaterialLibrary;
   private studio!: StudioRig;
   private lens!: LensAssembly;
@@ -165,6 +176,7 @@ export class LiveLensEngine {
 
   private explodeOverride: number | null = null; // null = follow scroll cue
   private viewMode: ViewMode = 'studio';
+  private bokehShape: BokehShape = 'hexagonal';
   private targetEngage = 0;
   private smoothEngage = 0;
 
@@ -280,22 +292,32 @@ export class LiveLensEngine {
         this.aberrationPass.uniforms.uAspect.value = aspect;
         this.aberrationPass.enabled = false;
         this.composer.addPass(this.aberrationPass);
+
+        this.bokehPass = new ShaderPass(createBokehSimulationShader(false));
+        this.bokehPass.uniforms.uAspect.value = aspect;
+        this.bokehPass.enabled = false;
+        this.composer.addPass(this.bokehPass);
       } else {
-        // Lightweight single-sample post-processing path used ONLY when Aberration mode is active on software WebGL
+        // Lightweight single-sample post-processing path used ONLY when Aberration or Bokeh mode is active on software WebGL
         const swTarget = new THREE.WebGLRenderTarget(this.viewportWidth, this.viewportHeight, {
           type: THREE.UnsignedByteType,
           format: THREE.RGBAFormat,
         });
-        this.softwareAberrationComposer = new EffectComposer(this.renderer, swTarget);
-        this.softwareAberrationComposer.setPixelRatio(this.currentDpr);
-        this.softwareAberrationComposer.setSize(this.viewportWidth, this.viewportHeight);
-        this.softwareAberrationComposer.addPass(new RenderPass(this.scene, this.camera));
-        this.softwareAberrationComposer.addPass(new OutputPass());
+        this.softwarePostComposer = new EffectComposer(this.renderer, swTarget);
+        this.softwarePostComposer.setPixelRatio(this.currentDpr);
+        this.softwarePostComposer.setSize(this.viewportWidth, this.viewportHeight);
+        this.softwarePostComposer.addPass(new RenderPass(this.scene, this.camera));
+        this.softwarePostComposer.addPass(new OutputPass());
 
         this.aberrationPass = new ShaderPass(createChromaticAberrationShader());
         this.aberrationPass.uniforms.uAspect.value = aspect;
-        this.aberrationPass.enabled = true;
-        this.softwareAberrationComposer.addPass(this.aberrationPass);
+        this.aberrationPass.enabled = false;
+        this.softwarePostComposer.addPass(this.aberrationPass);
+
+        this.bokehPass = new ShaderPass(createBokehSimulationShader(true));
+        this.bokehPass.uniforms.uAspect.value = aspect;
+        this.bokehPass.enabled = false;
+        this.softwarePostComposer.addPass(this.bokehPass);
       }
 
       // Bind window / pointer / scroll / context listeners
@@ -345,8 +367,18 @@ export class LiveLensEngine {
   public setViewMode(mode: ViewMode): void {
     this.viewMode = mode;
     this.lens?.setViewMode(mode);
-    if (this.aberrationPass && !this.isSoftwareGl) {
+    if (this.aberrationPass) {
       this.aberrationPass.enabled = mode === 'aberration';
+    }
+    if (this.bokehPass) {
+      this.bokehPass.enabled = mode === 'bokeh';
+    }
+  }
+
+  public setBokehShape(shape: BokehShape): void {
+    this.bokehShape = shape;
+    if (this.bokehPass) {
+      this.bokehPass.uniforms.uShapeMix.value = shape === 'hexagonal' ? 1.0 : 0.0;
     }
   }
 
@@ -408,13 +440,16 @@ export class LiveLensEngine {
       this.composer.setPixelRatio(this.currentDpr);
       this.composer.setSize(this.viewportWidth, this.viewportHeight);
     }
-    if (this.softwareAberrationComposer) {
-      this.softwareAberrationComposer.setPixelRatio(this.currentDpr);
-      this.softwareAberrationComposer.setSize(this.viewportWidth, this.viewportHeight);
+    if (this.softwarePostComposer) {
+      this.softwarePostComposer.setPixelRatio(this.currentDpr);
+      this.softwarePostComposer.setSize(this.viewportWidth, this.viewportHeight);
     }
+    const aspect = this.viewportWidth / Math.max(1, this.viewportHeight);
     if (this.aberrationPass) {
-      this.aberrationPass.uniforms.uAspect.value =
-        this.viewportWidth / Math.max(1, this.viewportHeight);
+      this.aberrationPass.uniforms.uAspect.value = aspect;
+    }
+    if (this.bokehPass) {
+      this.bokehPass.uniforms.uAspect.value = aspect;
     }
     if (this.bloomPass) {
       this.bloomPass.resolution.set(this.viewportWidth / 2, this.viewportHeight / 2);
@@ -675,7 +710,7 @@ export class LiveLensEngine {
     this.camera.lookAt(_lookTarget);
     this.camera.updateMatrixWorld();
 
-    // Update chromatic aberration post-processing uniforms when active
+    // Update post-processing diagnostic uniforms when active
     if (this.viewMode === 'aberration' && this.aberrationPass) {
       const shift = computeChromaticShift({
         apertureClosure: irisClosure,
@@ -687,16 +722,35 @@ export class LiveLensEngine {
       this.aberrationPass.uniforms.uCenter.value.set(shift.centerX, shift.centerY);
       this.aberrationPass.uniforms.uAspect.value = aspect;
       this.aberrationPass.uniforms.uFringeBoost.value = shift.fringeBoost;
+    } else if (this.viewMode === 'bokeh' && this.bokehPass) {
+      const bokeh = computeBokehParams({
+        apertureClosure: irisClosure,
+        focusNorm: focalState.focusNorm,
+        explode: this.smoothShot.explode,
+        shape: this.bokehShape,
+      });
+      this.bokehPass.uniforms.uRadius.value = bokeh.radius;
+      this.bokehPass.uniforms.uShapeMix.value = bokeh.shapeMix;
+      this.bokehPass.uniforms.uHighlightGain.value = bokeh.highlightGain;
+      this.bokehPass.uniforms.uFocusWindow.value = bokeh.focusWindow;
+      this.bokehPass.uniforms.uBladeRotation.value = bokeh.bladeRotation;
+      this.bokehPass.uniforms.uAspect.value = aspect;
+      this.bokehPass.uniforms.uCenter.value.set(
+        Math.max(0.15, Math.min(0.85, 0.5 + responsiveOffsetX)),
+        Math.max(0.2, Math.min(0.8, 0.5 + this.smoothShot.offsetY)),
+      );
     }
 
-    // Render scene (EffectComposer on GPU, lightweight Aberration composer or direct renderer on software WebGL)
+    // Render scene (EffectComposer on GPU, lightweight post composer for Aberration/Bokeh or direct renderer on software WebGL)
+    const needsSoftwarePost =
+      this.viewMode === 'aberration' || this.viewMode === 'bokeh';
     if (this.composer && !this.isSoftwareGl) {
       if (this.grainPass) {
         this.grainPass.uniforms.uTime.value = this.simTime;
       }
       this.composer.render();
-    } else if (this.viewMode === 'aberration' && this.softwareAberrationComposer) {
-      this.softwareAberrationComposer.render();
+    } else if (needsSoftwarePost && this.softwarePostComposer) {
+      this.softwarePostComposer.render();
     } else {
       this.renderer.render(this.scene, this.camera);
     }
@@ -751,6 +805,12 @@ export class LiveLensEngine {
           this.smoothEnvY,
           this.smoothEngage,
         ),
+        opticalData: computeOpticalData({
+          frameMm: this.smoothShot.frameMm,
+          explode: this.smoothShot.explode,
+          focusNorm: focalState.focusNorm,
+          viewMode: this.viewMode,
+        }),
       });
     }
   }
@@ -775,7 +835,8 @@ export class LiveLensEngine {
     this.materials?.dispose();
     this.studio?.dispose();
     this.aberrationPass?.dispose();
-    this.softwareAberrationComposer?.dispose();
+    this.bokehPass?.dispose();
+    this.softwarePostComposer?.dispose();
     this.composer?.dispose();
     this.renderer?.dispose();
   }

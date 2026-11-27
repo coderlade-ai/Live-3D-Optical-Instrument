@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type ViewMode = 'studio' | 'blueprint' | 'heatmap' | 'aberration';
+export type ViewMode = 'studio' | 'blueprint' | 'heatmap' | 'aberration' | 'bokeh';
 
 export interface OpticalSurfaceProfile {
   /** Base specular reflectance factor (0..1) */

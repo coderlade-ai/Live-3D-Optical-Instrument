@@ -1,13 +1,25 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, Volume2, VolumeX, Layers, Focus } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Volume2,
+  VolumeX,
+  Layers,
+  Focus,
+  Hexagon,
+  Circle,
+} from 'lucide-react';
 import { FINISH_PRESETS, FinishId } from '../engine/materials';
 import { ViewMode } from '../engine/heatmap';
+import { BokehShape } from '../engine/bokeh';
 
 interface ControlDockProps {
   finish: FinishId;
   onFinishChange: (finish: FinishId) => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
+  bokehShape: BokehShape;
+  onToggleBokehShape: () => void;
   showFocalPlane: boolean;
   focalDistanceLabel: string;
   onToggleFocalPlane: () => void;
@@ -23,6 +35,7 @@ const VIEW_MODES: Array<{ id: ViewMode; label: string }> = [
   { id: 'blueprint', label: 'Edges' },
   { id: 'heatmap', label: 'Heat Map' },
   { id: 'aberration', label: 'Aberration' },
+  { id: 'bokeh', label: 'Bokeh' },
 ];
 
 const FINISH_LIST = Object.values(FINISH_PRESETS);
@@ -39,6 +52,8 @@ export function ControlDock({
   onFinishChange,
   viewMode,
   onViewModeChange,
+  bokehShape,
+  onToggleBokehShape,
   showFocalPlane,
   focalDistanceLabel,
   onToggleFocalPlane,
@@ -84,7 +99,7 @@ export function ControlDock({
     <aside
       aria-label="3D Studio Controls"
       data-interactive="true"
-      className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[min(1080px,calc(100vw-24px))] flex flex-col items-center pointer-events-none"
+      className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[min(1220px,calc(100vw-24px))] flex flex-col items-center pointer-events-none"
     >
       {/* Collapse / Expand toggle tab */}
       <button
@@ -129,7 +144,7 @@ export function ControlDock({
                 max={100}
                 value={sliderVal}
                 onChange={(e) => onExplodeOverrideChange(Number(e.target.value) / 100)}
-                className="studio-slider flex-1 min-w-[80px]"
+                className="studio-slider flex-1 min-w-[60px]"
               />
               <span className="font-mono-tabular text-xs text-[#a6a096] w-9 text-right shrink-0">
                 {sliderVal}%
@@ -207,6 +222,35 @@ export function ControlDock({
                     );
                   })}
                 </div>
+
+                <button
+                  type="button"
+                  onClick={onToggleBokehShape}
+                  aria-pressed={bokehShape === 'hexagonal'}
+                  aria-label={
+                    bokehShape === 'hexagonal'
+                      ? 'Bokeh shape hexagonal, click to switch to circular'
+                      : 'Bokeh shape circular, click to switch to hexagonal'
+                  }
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 min-h-[36px] rounded-lg text-xs font-medium border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    viewMode === 'bokeh'
+                      ? 'bg-[#251814] border-[#fb923c]/70 text-[#ffedd5]'
+                      : 'bg-[#09090b] border-white/12 text-[#a6a096] hover:text-[#f0e9da]'
+                  }`}
+                >
+                  {bokehShape === 'hexagonal' ? (
+                    <Hexagon
+                      className={`w-3.5 h-3.5 shrink-0 ${viewMode === 'bokeh' ? 'text-[#fb923c]' : ''}`}
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Circle
+                      className={`w-3.5 h-3.5 shrink-0 ${viewMode === 'bokeh' ? 'text-[#fb923c]' : ''}`}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span>{bokehShape === 'hexagonal' ? 'Hex Bokeh' : 'Circle Bokeh'}</span>
+                </button>
 
                 <button
                   type="button"

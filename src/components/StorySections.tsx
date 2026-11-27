@@ -74,7 +74,7 @@ export function StorySections({
       <section
         id="overview"
         className={`min-h-[100svh] flex flex-col justify-between lg:justify-center px-5 sm:px-8 lg:px-12 pb-16 lg:py-24 max-w-7xl mx-auto transition-[padding] duration-150 ${
-          viewMode === 'heatmap' ? 'pt-28 sm:pt-20' : 'pt-20'
+          viewMode === 'heatmap' ? 'pt-36 sm:pt-20' : 'pt-28 sm:pt-20'
         }`}
       >
         <div
