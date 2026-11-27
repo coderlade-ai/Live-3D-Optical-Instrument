@@ -19,6 +19,7 @@ export default function App() {
 
   const [finish, setFinish] = useState<FinishId>('titanium');
   const [viewMode, setViewMode] = useState<ViewMode>('studio');
+  const [showFocalPlane, setShowFocalPlane] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [explodeOverride, setExplodeOverride] = useState<number | null>(null);
 
@@ -27,6 +28,7 @@ export default function App() {
     explode: 0,
     timeScale: 1,
     fStop: 'f/1.4',
+    focalDistanceLabel: '0.65 m',
     scrollProgress: 0,
     reflectionReadout: computeLiveReflectionReadout(0, 0, 0),
   });
@@ -45,6 +47,7 @@ export default function App() {
           if (
             prev.activeBeat === next.activeBeat &&
             prev.fStop === next.fStop &&
+            prev.focalDistanceLabel === next.focalDistanceLabel &&
             Math.abs(prev.explode - next.explode) < 0.015 &&
             Math.abs(prev.timeScale - next.timeScale) < 0.02 &&
             Math.abs(prev.scrollProgress - next.scrollProgress) < 0.008 &&
@@ -78,10 +81,24 @@ export default function App() {
   const handleViewModeChange = useCallback((nextMode: ViewMode) => {
     setViewMode(nextMode);
     engineRef.current?.setViewMode(nextMode);
-    engineRef.current?.audio.playDetent(
-      nextMode === 'heatmap' ? 1.45 : nextMode === 'blueprint' ? 1.25 : 0.88,
-      0.75,
-    );
+    const pitch =
+      nextMode === 'aberration'
+        ? 1.55
+        : nextMode === 'heatmap'
+          ? 1.45
+          : nextMode === 'blueprint'
+            ? 1.25
+            : 0.88;
+    engineRef.current?.audio.playDetent(pitch, 0.75);
+  }, []);
+
+  const handleToggleFocalPlane = useCallback(() => {
+    setShowFocalPlane((prev) => {
+      const next = !prev;
+      engineRef.current?.setFocalPlaneVisible(next);
+      engineRef.current?.audio.playDetent(next ? 1.32 : 0.92, 0.7);
+      return next;
+    });
   }, []);
 
   const handleToggleHeatMap = useCallback(() => {
@@ -133,6 +150,7 @@ export default function App() {
       data-ready={ready ? 'true' : 'false'}
       data-beat={telemetry.activeBeat as BeatId}
       data-view-mode={viewMode}
+      data-focal-plane={showFocalPlane ? 'true' : 'false'}
       data-blueprint={viewMode === 'blueprint' ? 'true' : 'false'}
       data-finish={finish}
       data-sound={soundEnabled ? 'on' : 'off'}
@@ -203,6 +221,9 @@ export default function App() {
         onFinishChange={handleFinishChange}
         viewMode={viewMode}
         onViewModeChange={handleViewModeChange}
+        showFocalPlane={showFocalPlane}
+        focalDistanceLabel={telemetry.focalDistanceLabel}
+        onToggleFocalPlane={handleToggleFocalPlane}
         soundEnabled={soundEnabled}
         onToggleSound={handleToggleSound}
         explodeOverride={explodeOverride}

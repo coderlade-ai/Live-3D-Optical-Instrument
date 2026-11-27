@@ -18,6 +18,15 @@ import {
   ViewMode,
   computeLiveReflectionReadout,
 } from './heatmap';
+import {
+  computeChromaticShift,
+  createChromaticAberrationShader,
+} from './aberration';
+import {
+  FocalPlaneHelper,
+  computeFocalDistanceState,
+  createFocalPlaneHelper,
+} from './focalPlane';
 import { LAYER_GLASS, LAYER_METAL, LensAssembly, buildKesslerLens } from './lensBuilder';
 import { StudioRig, setupPhotoStudio } from './studio';
 import { ProceduralLensAudio } from './audio';
@@ -41,6 +50,7 @@ export interface EngineTelemetry {
   explode: number;
   timeScale: number;
   fStop: string;
+  focalDistanceLabel: string;
   scrollProgress: number;
   reflectionReadout: ReflectionReadout;
 }
@@ -122,11 +132,14 @@ export class LiveLensEngine {
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
   private composer: EffectComposer | null = null;
+  private softwareAberrationComposer: EffectComposer | null = null;
   private bloomPass: UnrealBloomPass | null = null;
   private grainPass: ShaderPass | null = null;
+  private aberrationPass: ShaderPass | null = null;
   private materials!: MaterialLibrary;
   private studio!: StudioRig;
   private lens!: LensAssembly;
+  private focalPlane!: FocalPlaneHelper;
   public audio: ProceduralLensAudio;
 
   private isSoftwareGl = false;
@@ -227,9 +240,13 @@ export class LiveLensEngine {
       this.studio = setupPhotoStudio(this.renderer, this.scene, this.isSoftwareGl);
       this.materials = createMaterialLibrary(this.renderer, this.isSoftwareGl);
       this.lens = buildKesslerLens(this.materials, this.isSoftwareGl);
+      this.focalPlane = createFocalPlaneHelper(LAYER_METAL);
+      this.lens.root.add(this.focalPlane.group);
       this.scene.add(this.lens.root);
 
-      // Step 09 Post-Processing Chain on hardware GPUs: Scene -> MSAA HDR -> Bloom (glints only) -> Grain -> ACES Output
+      const aspect = this.viewportWidth / Math.max(1, this.viewportHeight);
+
+      // Step 09 Post-Processing Chain on hardware GPUs: Scene -> MSAA HDR -> Bloom -> Grain -> Output -> Chromatic Aberration
       if (!this.isSoftwareGl) {
         const renderTarget = new THREE.WebGLRenderTarget(
           this.viewportWidth,
@@ -258,6 +275,27 @@ export class LiveLensEngine {
         this.composer.addPass(this.grainPass);
 
         this.composer.addPass(new OutputPass());
+
+        this.aberrationPass = new ShaderPass(createChromaticAberrationShader());
+        this.aberrationPass.uniforms.uAspect.value = aspect;
+        this.aberrationPass.enabled = false;
+        this.composer.addPass(this.aberrationPass);
+      } else {
+        // Lightweight single-sample post-processing path used ONLY when Aberration mode is active on software WebGL
+        const swTarget = new THREE.WebGLRenderTarget(this.viewportWidth, this.viewportHeight, {
+          type: THREE.UnsignedByteType,
+          format: THREE.RGBAFormat,
+        });
+        this.softwareAberrationComposer = new EffectComposer(this.renderer, swTarget);
+        this.softwareAberrationComposer.setPixelRatio(this.currentDpr);
+        this.softwareAberrationComposer.setSize(this.viewportWidth, this.viewportHeight);
+        this.softwareAberrationComposer.addPass(new RenderPass(this.scene, this.camera));
+        this.softwareAberrationComposer.addPass(new OutputPass());
+
+        this.aberrationPass = new ShaderPass(createChromaticAberrationShader());
+        this.aberrationPass.uniforms.uAspect.value = aspect;
+        this.aberrationPass.enabled = true;
+        this.softwareAberrationComposer.addPass(this.aberrationPass);
       }
 
       // Bind window / pointer / scroll / context listeners
@@ -307,6 +345,13 @@ export class LiveLensEngine {
   public setViewMode(mode: ViewMode): void {
     this.viewMode = mode;
     this.lens?.setViewMode(mode);
+    if (this.aberrationPass && !this.isSoftwareGl) {
+      this.aberrationPass.enabled = mode === 'aberration';
+    }
+  }
+
+  public setFocalPlaneVisible(visible: boolean): void {
+    this.focalPlane?.setVisible(visible);
   }
 
   public setExplodeOverride(value: number | null): void {
@@ -362,6 +407,14 @@ export class LiveLensEngine {
     if (this.composer) {
       this.composer.setPixelRatio(this.currentDpr);
       this.composer.setSize(this.viewportWidth, this.viewportHeight);
+    }
+    if (this.softwareAberrationComposer) {
+      this.softwareAberrationComposer.setPixelRatio(this.currentDpr);
+      this.softwareAberrationComposer.setSize(this.viewportWidth, this.viewportHeight);
+    }
+    if (this.aberrationPass) {
+      this.aberrationPass.uniforms.uAspect.value =
+        this.viewportWidth / Math.max(1, this.viewportHeight);
     }
     if (this.bloomPass) {
       this.bloomPass.resolution.set(this.viewportWidth / 2, this.viewportHeight / 2);
@@ -552,6 +605,21 @@ export class LiveLensEngine {
       engageAmount: this.smoothEngage,
     });
 
+    // Live optical focus & aperture state driving the focal distance plane and chromatic aberration shader
+    const pulseWave = Math.sin(this.simTime * 1.45) * 0.5 + 0.5;
+    const irisClosure = Math.min(1, pulseWave * 0.28 + this.smoothEngage * 0.72);
+    const focusAngle = Math.sin(this.simTime * 0.72) * 0.16 + this.smoothEngage * 0.65;
+    const focalState = computeFocalDistanceState({
+      focusAngle,
+      engageAmount: this.smoothEngage,
+      explode: this.smoothShot.explode,
+    });
+
+    if (this.focalPlane.isVisible()) {
+      const frontApexZ = 28.4 + this.smoothShot.explode * 44.0;
+      this.focalPlane.update(focalState, this.simTime, frontApexZ);
+    }
+
     // Subtle organic floating poise
     this.lens.root.rotation.y = this.smoothEnvX * 0.08;
     this.lens.root.rotation.x = this.smoothEnvY * 0.06;
@@ -607,12 +675,28 @@ export class LiveLensEngine {
     this.camera.lookAt(_lookTarget);
     this.camera.updateMatrixWorld();
 
-    // Render scene (EffectComposer on GPU, direct renderer on software WebGL)
+    // Update chromatic aberration post-processing uniforms when active
+    if (this.viewMode === 'aberration' && this.aberrationPass) {
+      const shift = computeChromaticShift({
+        apertureClosure: irisClosure,
+        focusNorm: focalState.focusNorm,
+        envTiltX: this.smoothEnvX,
+        envTiltY: this.smoothEnvY,
+      });
+      this.aberrationPass.uniforms.uAmount.value = shift.amount;
+      this.aberrationPass.uniforms.uCenter.value.set(shift.centerX, shift.centerY);
+      this.aberrationPass.uniforms.uAspect.value = aspect;
+      this.aberrationPass.uniforms.uFringeBoost.value = shift.fringeBoost;
+    }
+
+    // Render scene (EffectComposer on GPU, lightweight Aberration composer or direct renderer on software WebGL)
     if (this.composer && !this.isSoftwareGl) {
       if (this.grainPass) {
         this.grainPass.uniforms.uTime.value = this.simTime;
       }
       this.composer.render();
+    } else if (this.viewMode === 'aberration' && this.softwareAberrationComposer) {
+      this.softwareAberrationComposer.render();
     } else {
       this.renderer.render(this.scene, this.camera);
     }
@@ -650,8 +734,6 @@ export class LiveLensEngine {
     const now = performance.now();
     if (now - this.lastTelemetryEmit > 110) {
       this.lastTelemetryEmit = now;
-      const pulseWave = Math.sin(this.simTime * 1.45) * 0.5 + 0.5;
-      const irisClosure = Math.min(1, pulseWave * 0.28 + this.smoothEngage * 0.72);
       const stopIdx = Math.min(
         F_STOPS.length - 1,
         Math.round(irisClosure * (F_STOPS.length - 1)),
@@ -662,6 +744,7 @@ export class LiveLensEngine {
         explode: this.smoothShot.explode,
         timeScale: this.smoothShot.timeScale,
         fStop: F_STOPS[stopIdx],
+        focalDistanceLabel: focalState.label,
         scrollProgress: this.scrollProgress,
         reflectionReadout: computeLiveReflectionReadout(
           this.smoothEnvX,
@@ -687,9 +770,12 @@ export class LiveLensEngine {
     this.canvas.removeEventListener('webglcontextrestored', this.handleContextRestored);
 
     this.audio.dispose();
+    this.focalPlane?.dispose();
     this.lens?.dispose();
     this.materials?.dispose();
     this.studio?.dispose();
+    this.aberrationPass?.dispose();
+    this.softwareAberrationComposer?.dispose();
     this.composer?.dispose();
     this.renderer?.dispose();
   }

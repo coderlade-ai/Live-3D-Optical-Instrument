@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, Volume2, VolumeX, Layers } from 'lucide-react';
+import { ChevronDown, ChevronUp, Volume2, VolumeX, Layers, Focus } from 'lucide-react';
 import { FINISH_PRESETS, FinishId } from '../engine/materials';
 import { ViewMode } from '../engine/heatmap';
 
@@ -8,6 +8,9 @@ interface ControlDockProps {
   onFinishChange: (finish: FinishId) => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
+  showFocalPlane: boolean;
+  focalDistanceLabel: string;
+  onToggleFocalPlane: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   explodeOverride: number | null;
@@ -19,6 +22,7 @@ const VIEW_MODES: Array<{ id: ViewMode; label: string }> = [
   { id: 'studio', label: 'Studio' },
   { id: 'blueprint', label: 'Edges' },
   { id: 'heatmap', label: 'Heat Map' },
+  { id: 'aberration', label: 'Aberration' },
 ];
 
 const FINISH_LIST = Object.values(FINISH_PRESETS);
@@ -35,6 +39,9 @@ export function ControlDock({
   onFinishChange,
   viewMode,
   onViewModeChange,
+  showFocalPlane,
+  focalDistanceLabel,
+  onToggleFocalPlane,
   soundEnabled,
   onToggleSound,
   explodeOverride,
@@ -77,7 +84,7 @@ export function ControlDock({
     <aside
       aria-label="3D Studio Controls"
       data-interactive="true"
-      className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[min(920px,calc(100vw-24px))] flex flex-col items-center pointer-events-none"
+      className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[min(1080px,calc(100vw-24px))] flex flex-col items-center pointer-events-none"
     >
       {/* Collapse / Expand toggle tab */}
       <button
@@ -172,8 +179,8 @@ export function ControlDock({
                 })}
               </div>
 
-              {/* View Mode Segmented Control (Studio | Edges | Heat Map) & Audio */}
-              <div className="flex items-center gap-1.5 shrink-0">
+              {/* View Mode Segmented Control (Studio | Edges | Heat Map | Aberration), Focal Plane & Audio */}
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <div
                   role="group"
                   aria-label="Diagnostic view mode"
@@ -187,11 +194,11 @@ export function ControlDock({
                         type="button"
                         onClick={() => onViewModeChange(m.id)}
                         aria-pressed={active}
-                        className={`px-2.5 py-1.5 min-h-[32px] rounded-md text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                        className={`px-2 sm:px-2.5 py-1.5 min-h-[32px] rounded-md text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                           active
-                            ? m.id === 'heatmap' || m.id === 'blueprint'
-                              ? 'bg-[#dc2626] text-white'
-                              : 'bg-[#202026] text-[#f0e9da]'
+                            ? m.id === 'studio'
+                              ? 'bg-[#202026] text-[#f0e9da]'
+                              : 'bg-[#dc2626] text-white'
                             : 'text-[#a6a096] hover:text-[#f0e9da]'
                         }`}
                       >
@@ -203,10 +210,37 @@ export function ControlDock({
 
                 <button
                   type="button"
+                  onClick={onToggleFocalPlane}
+                  aria-pressed={showFocalPlane}
+                  aria-label={
+                    showFocalPlane
+                      ? 'Hide focal distance plane helper'
+                      : 'Show focal distance plane helper'
+                  }
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 min-h-[36px] rounded-lg text-xs font-medium border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    showFocalPlane
+                      ? 'bg-[#0c2330] border-[#38bdf8]/70 text-[#e0f2fe]'
+                      : 'bg-[#09090b] border-white/12 text-[#a6a096] hover:text-[#f0e9da]'
+                  }`}
+                >
+                  <Focus
+                    className={`w-3.5 h-3.5 shrink-0 ${showFocalPlane ? 'text-[#38bdf8]' : ''}`}
+                    aria-hidden="true"
+                  />
+                  <span>Focal Plane</span>
+                  {showFocalPlane && (
+                    <span className="font-mono-tabular text-[11px] text-[#38bdf8]">
+                      {focalDistanceLabel}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
                   onClick={onToggleSound}
                   aria-pressed={soundEnabled}
                   aria-label={soundEnabled ? 'Mute synthesized audio' : 'Enable synthesized audio'}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] rounded-lg text-xs font-medium border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 min-h-[36px] rounded-lg text-xs font-medium border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     soundEnabled
                       ? 'bg-[#202026] border-[#dc2626]/60 text-[#f0e9da]'
                       : 'bg-[#09090b] border-white/12 text-[#a6a096] hover:text-[#f0e9da]'
